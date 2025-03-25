@@ -3,23 +3,18 @@ import os
 import json
 from openai import OpenAI
 
-# Инициализация бота
+# Переменные окружения
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
+# Инициализация
 bot = telebot.TeleBot(BOT_TOKEN)
+client = OpenAI(api_key=OPENAI_API_KEY, base_url="https://api.proxyapi.ru/openai/v1")
 
 SCENARIO_FILE = "scenario_store.json"
 USER_FILE = "user_db.json"
 
-# Создание клиент OpenAI с ProxyAPI
-client = OpenAI(
-    api_key=OPENAI_API_KEY,
-    base_url="https://api.proxyapi.ru/openai/v1",
-)
-
-# Файлы сценариев и пользователей
 if not os.path.exists(SCENARIO_FILE):
     with open(SCENARIO_FILE, "w") as f:
         json.dump({}, f)
@@ -74,13 +69,15 @@ def handle_ai_intro(message):
     bot.send_message(message.chat.id, "🧠 Напиши мне, что чувствуешь или хочешь обсудить — я рядом.")
     bot.register_next_step_handler(message, process_ai_message)
 
-# Простой системный промт
+# Системный промт
 SYSTEM_PROMPT = (
-    "Ты ассистент Академии Практической Психологии и Консалтинга. "
-    "Говори мягко, поддерживающе, на русском языке. "
-    "Отвечай только на темы, связанные с обучением, эмоциями и психологией. "
-    "Если вопрос не по теме — вежливо откажись и предложи вернуться к поддержке."
+    "Ты доброжелательный ассистент Академии Практической Психологии. "
+    "Отвечай на вопросы только по программам, обучению, помощи, эмоциям. "
+    "Если вопрос не по теме — вежливо откажи и предложи спросить про обучение."
 )
+
+# AI ответ
+user_interests = {}
 
 def process_ai_message(message):
     user_id = message.from_user.id
@@ -98,9 +95,30 @@ def process_ai_message(message):
         )
         reply = response.choices[0].message.content
         bot.send_message(message.chat.id, reply)
+
+        # Текстовый лог
+        print("="*40)
+        print(f"[USER {user_id}]: {user_input}")
+        print(f"[BOT]: {reply}")
+        print("="*40)
+
+        # Сохраняем интерес
+        keywords = {
+            "КПТ": "Когнитивно-поведенческая терапия",
+            "коуч": "Профессиональный коучинг",
+            "телесн": "Телесно-ориентированная психотерапия",
+            "ДФС": "Методика ДФС",
+            "интенс": "Интенсив 'Психолог-консультант'"
+        }
+        for key, name in keywords.items():
+            if key.lower() in reply.lower():
+                user_interests[str(user_id)] = name
+                print(f"[MEMO] User {user_id} is interested in: {name}")
+                break
+
     except Exception as e:
+        bot.send_message(message.chat.id, "❌ Что-то пошло не так... Попробуй ещё раз чуть позже.")
         print(f"[AI Error]: {e}")
-        bot.send_message(message.chat.id, "❌ Что-то пошло не так... Попробуй ещё раз позже.")
 
 bot.polling()
 
