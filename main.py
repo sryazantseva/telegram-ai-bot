@@ -1,13 +1,21 @@
 import telebot
 import os
 import json
-import openai
+from openai import OpenAI
 
+# Telegram bot setup
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
-
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# OpenAI client via ProxyAPI
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+client = OpenAI(
+    api_key=OPENAI_API_KEY,
+    base_url="https://api.proxyapi.ru/openai/v1"
+)
+
+# Files
 SCENARIO_FILE = "scenario_store.json"
 USER_FILE = "user_db.json"
 
@@ -42,14 +50,14 @@ def handle_start(message):
             if scenario.get("file_or_link"):
                 bot.send_message(user_id, scenario["file_or_link"])
             if scenario.get("file_id"):
-                file_type = scenario.get("file_type")
-                if file_type == "document":
+                ft = scenario.get("file_type")
+                if ft == "document":
                     bot.send_document(user_id, scenario["file_id"])
-                elif file_type == "audio":
+                elif ft == "audio":
                     bot.send_audio(user_id, scenario["file_id"])
-                elif file_type == "video":
+                elif ft == "video":
                     bot.send_video(user_id, scenario["file_id"])
-                elif file_type == "photo":
+                elif ft == "photo":
                     bot.send_photo(user_id, scenario["file_id"])
         else:
             bot.send_message(user_id, "❌ Такой сценарий не найден.")
@@ -84,28 +92,18 @@ def process_scenario_text(message):
 
 def process_file_step(message, text):
     if message.content_type == "text" and message.text.lower() == "нет":
-        file_id = ""
-        file_type = ""
-        ask_for_link(message, text, file_id, file_type)
+        ask_for_link(message, text, "", "")
     elif message.document:
-        file_id = message.document.file_id
-        file_type = "document"
-        ask_for_link(message, text, file_id, file_type)
+        ask_for_link(message, text, message.document.file_id, "document")
     elif message.audio:
-        file_id = message.audio.file_id
-        file_type = "audio"
-        ask_for_link(message, text, file_id, file_type)
+        ask_for_link(message, text, message.audio.file_id, "audio")
     elif message.video:
-        file_id = message.video.file_id
-        file_type = "video"
-        ask_for_link(message, text, file_id, file_type)
+        ask_for_link(message, text, message.video.file_id, "video")
     elif message.photo:
-        file_id = message.photo[-1].file_id
-        file_type = "photo"
-        ask_for_link(message, text, file_id, file_type)
+        ask_for_link(message, text, message.photo[-1].file_id, "photo")
     else:
         bot.send_message(message.chat.id, "❌ Неверный тип файла. Попробуй ещё раз.")
-        return
+
 
 def ask_for_link(message, text, file_id, file_type):
     msg = bot.send_message(message.chat.id, "🔗 Вставьте ссылку (или отправьте 'нет'):")
@@ -130,7 +128,7 @@ def save_scenario(message, text, file_id, file_type, file_or_link):
         json.dump(scenarios, f)
     bot.send_message(message.chat.id, f"✅ Сценарий сохранён!\nСсылка: t.me/{bot.get_me().username}?start={code}")
 
-# 🔒 Безопасная загрузка промта
+# AI PROMPT
 try:
     with open("ai_prompt_academy.txt", "r", encoding="utf-8") as f:
         SYSTEM_PROMPT = f.read()
@@ -141,43 +139,33 @@ except FileNotFoundError:
         "Отвечай только на темы, связанные с обучением, эмоциями и психологией. "
         "Если вопрос не по теме — вежливо откажись и предложи вернуться к поддержке."
     )
-    print("⚠️ Промт не найден — используется резервная версия.")
 
-openai.api_key = os.environ.get("OPENAI_API_KEY")
-
-# Команда для начала диалога
 @bot.message_handler(commands=["поговорим"])
 def handle_ai_intro(message):
     bot.send_message(message.chat.id, "🧠 Напиши мне, что чувствуешь или хочешь обсудить — я рядом.")
     bot.register_next_step_handler(message, process_ai_message)
 
-# Заглушка для мини-памяти (можно заменить на файл позже)
 user_interests = {}
 
 def process_ai_message(message):
     user_id = message.from_user.id
     user_input = message.text
-
     try:
-        response = openai.ChatCompletion.create(
-            model="	o3-mini",
+        response = client.chat.completions.create(
+            model="o3-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_input}
-            ],
-            temperature=0.8,
-            max_tokens=500
+            ]
         )
-        reply = response["choices"][0]["message"]["content"]
+        reply = response.choices[0].message.content
         bot.send_message(message.chat.id, reply)
 
-        # ✅ Печатаем в консоль
         print("="*40)
         print(f"[USER {user_id}]: {user_input}")
         print(f"[BOT]: {reply}")
         print("="*40)
 
-        # ✅ Простейшая "память": ищем ключевые интересы в ответе
         keywords = {
             "КПТ": "Когнитивно-поведенческая терапия",
             "коучинг": "Профессиональный коучинг",
@@ -194,7 +182,6 @@ def process_ai_message(message):
     except Exception as e:
         bot.send_message(message.chat.id, "❌ Что-то пошло не так... Попробуй ещё раз.")
         print(f"[Ошибка AI]: {e}")
-
 
 bot.polling()
 
