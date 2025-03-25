@@ -1,6 +1,7 @@
 import telebot
 import os
 import json
+import openai
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
@@ -128,6 +129,72 @@ def save_scenario(message, text, file_id, file_type, file_or_link):
     with open(SCENARIO_FILE, "w") as f:
         json.dump(scenarios, f)
     bot.send_message(message.chat.id, f"✅ Сценарий сохранён!\nСсылка: t.me/{bot.get_me().username}?start={code}")
+
+# 🔒 Безопасная загрузка промта
+try:
+    with open("ai_prompt_academy.txt", "r", encoding="utf-8") as f:
+        SYSTEM_PROMPT = f.read()
+except FileNotFoundError:
+    SYSTEM_PROMPT = (
+        "Ты ассистент Академии Практической Психологии и Консалтинга. "
+        "Говори мягко, поддерживающе, на русском языке. "
+        "Отвечай только на темы, связанные с обучением, эмоциями и психологией. "
+        "Если вопрос не по теме — вежливо откажись и предложи вернуться к поддержке."
+    )
+    print("⚠️ Промт не найден — используется резервная версия.")
+
+openai.api_key = os.environ.get("OPENAI_API_KEY")
+
+# Команда для начала диалога
+@bot.message_handler(commands=["поговорим"])
+def handle_ai_intro(message):
+    bot.send_message(message.chat.id, "🧠 Напиши мне, что чувствуешь или хочешь обсудить — я рядом.")
+    bot.register_next_step_handler(message, process_ai_message)
+
+# Заглушка для мини-памяти (можно заменить на файл позже)
+user_interests = {}
+
+def process_ai_message(message):
+    user_id = message.from_user.id
+    user_input = message.text
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="	o3-mini",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_input}
+            ],
+            temperature=0.8,
+            max_tokens=500
+        )
+        reply = response["choices"][0]["message"]["content"]
+        bot.send_message(message.chat.id, reply)
+
+        # ✅ Печатаем в консоль
+        print("="*40)
+        print(f"[USER {user_id}]: {user_input}")
+        print(f"[BOT]: {reply}")
+        print("="*40)
+
+        # ✅ Простейшая "память": ищем ключевые интересы в ответе
+        keywords = {
+            "КПТ": "Когнитивно-поведенческая терапия",
+            "коучинг": "Профессиональный коучинг",
+            "телесно": "Телесно-ориентированная психотерапия",
+            "ДФС": "Методика ДФС",
+            "интенсив": "Интенсив «Психолог-консультант»"
+        }
+        for key, name in keywords.items():
+            if key.lower() in reply.lower():
+                user_interests[str(user_id)] = name
+                print(f"[💾 Память] Пользователь {user_id} заинтересовался: {name}")
+                break
+
+    except Exception as e:
+        bot.send_message(message.chat.id, "❌ Что-то пошло не так... Попробуй ещё раз.")
+        print(f"[Ошибка AI]: {e}")
+
 
 bot.polling()
 
