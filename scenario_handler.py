@@ -6,11 +6,12 @@ SCENARIO_FILE = "scenario_store.json"
 TEMP_SCENARIO_FILE = "temp_scenarios.json"
 
 
-def init_scenarios(bot):
+def init_scenarios(bot, admin_id):
     @bot.message_handler(commands=["сценарий"])
     def handle_scenario(message):
-        if message.from_user.id != int(bot.ADMIN_ID):
+        if message.from_user.id != admin_id:
             return
+
         bot.send_message(message.chat.id, "📝 Введите текст сценария:")
         bot.register_next_step_handler(message, get_scenario_text, bot)
 
