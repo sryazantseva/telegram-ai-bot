@@ -1,7 +1,6 @@
 import telebot
 import os
 import json
-import re
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
@@ -43,15 +42,8 @@ def handle_start(message):
         scenario = scenarios.get(scenario_code)
         if scenario:
             bot.send_message(user_id, scenario["text"])
-            if scenario.get("file_or_link"):
-                url = scenario["file_or_link"]
-                # Если это видео-ссылка (YouTube или mp4), показываем с предпросмотром
-                if re.search(r"(youtu\.be|youtube\.com|\.mp4|vimeo\.com)", url):
-                    preview = telebot.types.InlineKeyboardMarkup()
-                    preview.add(telebot.types.InlineKeyboardButton("▶️ Смотреть видео", url=url))
-                    bot.send_message(user_id, "🎥 Видео к сценарию:", reply_markup=preview)
-                else:
-                    bot.send_message(user_id, url)
+            if scenario["file_or_link"]:
+                bot.send_message(user_id, scenario["file_or_link"])
         else:
             bot.send_message(user_id, "❌ Такой сценарий не найден.")
     else:
@@ -72,22 +64,6 @@ def handle_admin(message):
     with open(USER_FILE, "r") as f:
         users = json.load(f)
     bot.send_message(message.chat.id, f"📊 Сценариев: {len(scenarios)}\n👥 Пользователей: {len(users)}")
-
-# /сценарии
-@bot.message_handler(commands=["сценарии"])
-def handle_list_scenarios(message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    with open(SCENARIO_FILE, "r") as f:
-        scenarios = json.load(f)
-    if not scenarios:
-        bot.send_message(message.chat.id, "📭 Сценарии не найдены.")
-    else:
-        reply = "📚 Список сценариев:\n"
-        for code, data in scenarios.items():
-            short = data["text"][:40].replace('\n', ' ') + "..." if len(data["text"]) > 40 else data["text"]
-            reply += f"🔹 `{code}` — {short}\n"
-        bot.send_message(message.chat.id, reply, parse_mode="Markdown")
 
 # /сценарий
 @bot.message_handler(commands=["сценарий"])
@@ -151,3 +127,4 @@ def confirm_broadcast(message, text):
         bot.send_message(message.chat.id, "❌ Рассылка отменена.")
 
 bot.polling()
+
