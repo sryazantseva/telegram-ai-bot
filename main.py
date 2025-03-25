@@ -6,6 +6,12 @@ import threading
 import time
 from datetime import datetime, timedelta
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InputFile
+from broadcast_handler import init_broadcast
+from scenario_handler import init_scenarios
+
+# Инициализация
+init_broadcast(bot)
+init_scenarios(bot)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
