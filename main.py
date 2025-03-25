@@ -3,6 +3,7 @@ import os
 import json
 import threading
 from datetime import datetime, timedelta
+import re
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
@@ -42,7 +43,24 @@ def handle_start(message):
         if scenario:
             bot.send_message(user_id, scenario["text"])
             if scenario.get("file_or_link"):
-                bot.send_message(user_id, scenario["file_or_link"])
+                url = scenario["file_or_link"]
+                if re.search(r"(youtu\.be|youtube\.com|\.mp4|vimeo\.com)", url):
+                    markup = telebot.types.InlineKeyboardMarkup()
+                    markup.add(telebot.types.InlineKeyboardButton("▶️ Смотреть видео", url=url))
+                    bot.send_message(user_id, "🎥 Видео к сценарию:", reply_markup=markup)
+                else:
+                    bot.send_message(user_id, url)
+            if scenario.get("file_id"):
+                f_id = scenario["file_id"]
+                f_type = scenario["file_type"]
+                if f_type == "document":
+                    bot.send_document(user_id, f_id)
+                elif f_type == "audio":
+                    bot.send_audio(user_id, f_id)
+                elif f_type == "video":
+                    bot.send_video(user_id, f_id)
+                elif f_type == "photo":
+                    bot.send_photo(user_id, f_id)
         else:
             bot.send_message(user_id, "❌ Такой сценарий не найден.")
     else:
@@ -81,24 +99,58 @@ def handle_list_scenarios(message):
 def handle_scenario(message):
     if message.from_user.id != ADMIN_ID:
         return
-    msg = bot.send_message(message.chat.id, "📝 Введите текст сценария:")
-    bot.register_next_step_handler(msg, process_scenario_text)
+    bot.send_message(message.chat.id, "📝 Введите текст сценария:")
+    bot.register_next_step_handler(message, process_scenario_text)
 
 def process_scenario_text(message):
     text = message.text
-    msg = bot.send_message(message.chat.id, "🔗 Прикрепите ссылку или файл (если нужно), или напишите 'нет':")
-    bot.register_next_step_handler(msg, process_scenario_link, text)
+    bot.send_message(message.chat.id, "📎 Прикрепите файл (pdf/audio/video/photo) или отправьте 'нет':")
+    bot.register_next_step_handler(message, process_file_step, text)
 
-def process_scenario_link(message, text):
+def process_file_step(message, text):
+    if message.content_type == "text" and message.text.lower() == "нет":
+        file_id = ""
+        file_type = ""
+        ask_for_link(message, text, file_id, file_type)
+    elif message.document:
+        file_id = message.document.file_id
+        file_type = "document"
+        ask_for_link(message, text, file_id, file_type)
+    elif message.audio:
+        file_id = message.audio.file_id
+        file_type = "audio"
+        ask_for_link(message, text, file_id, file_type)
+    elif message.video:
+        file_id = message.video.file_id
+        file_type = "video"
+        ask_for_link(message, text, file_id, file_type)
+    elif message.photo:
+        file_id = message.photo[-1].file_id
+        file_type = "photo"
+        ask_for_link(message, text, file_id, file_type)
+    else:
+        bot.send_message(message.chat.id, "❌ Неверный тип файла. Попробуй ещё раз.")
+        return
+
+def ask_for_link(message, text, file_id, file_type):
+    msg = bot.send_message(message.chat.id, "🔗 Вставьте ссылку (или отправьте 'нет'):")
+    bot.register_next_step_handler(msg, ask_for_code, text, file_id, file_type)
+
+def ask_for_code(message, text, file_id, file_type):
     file_or_link = message.text if message.text.lower() != "нет" else ""
     msg = bot.send_message(message.chat.id, "💬 Введите короткий код сценария (латиницей):")
-    bot.register_next_step_handler(msg, save_scenario, text, file_or_link)
+    bot.register_next_step_handler(msg, save_scenario, text, file_id, file_type, file_or_link)
 
-def save_scenario(message, text, file_or_link):
+def save_scenario(message, text, file_id, file_type, file_or_link):
     code = message.text.strip()
     with open(SCENARIO_FILE, "r") as f:
         scenarios = json.load(f)
-    scenarios[code] = {"text": text, "file_or_link": file_or_link}
+    scenarios[code] = {
+        "text": text,
+        "file_id": file_id,
+        "file_type": file_type,
+        "file_or_link": file_or_link
+    }
     with open(SCENARIO_FILE, "w") as f:
         json.dump(scenarios, f)
     bot.send_message(message.chat.id, f"✅ Сценарий сохранён!\nСсылка: t.me/{bot.get_me().username}?start={code}")
@@ -112,21 +164,21 @@ def handle_broadcast(message):
 
 def ask_schedule_type(message):
     text = message.text
-    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    markup.add("Сейчас", "Завтра в определённое время")
-    bot.send_message(message.chat.id, "⏰ Когда отправить сообщение?", reply_markup=markup)
-    bot.register_next_step_handler(message, handle_schedule_choice, text)
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(
+        telebot.types.InlineKeyboardButton("📤 Отправить сейчас", callback_data=f"broadcast_now|{text}"),
+        telebot.types.InlineKeyboardButton("⏰ Запланировать на завтра", callback_data=f"broadcast_tomorrow|{text}")
+    )
+    bot.send_message(message.chat.id, "Выберите время отправки:", reply_markup=markup)
 
-def handle_schedule_choice(message, text):
-    choice = message.text.lower()
-    if "сейчас" in choice:
-        send_broadcast(text, message.chat.id)
-    elif "завтра" in choice:
-        msg = bot.send_message(message.chat.id, "🕒 Введите время в формате ЧЧ:ММ по МСК (например, 10:30):")
+@bot.callback_query_handler(func=lambda call: call.data.startswith("broadcast_"))
+def handle_broadcast_choice(call):
+    action, text = call.data.split("|", 1)
+    if action == "broadcast_now":
+        send_broadcast(text, call.message.chat.id)
+    elif action == "broadcast_tomorrow":
+        msg = bot.send_message(call.message.chat.id, "🕒 Введите время в формате ЧЧ:ММ по МСК (например, 10:30):")
         bot.register_next_step_handler(msg, schedule_for_tomorrow, text)
-    else:
-        bot.send_message(message.chat.id, "❌ Неверный выбор. Попробуйте снова.")
-
 
 def schedule_for_tomorrow(message, text):
     try:
@@ -154,3 +206,4 @@ def send_broadcast(text, chat_id):
     bot.send_message(chat_id, f"✅ Рассылка завершена. Отправлено: {count}")
 
 bot.polling()
+
