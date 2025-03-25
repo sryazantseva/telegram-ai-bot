@@ -197,7 +197,6 @@ def save_scenario_final(message, text, file_id, link):
     }
     with open(SCENARIO_FILE, "w") as f:
         json.dump(scenarios, f)
-    bot.send_message(message.chat.id, f"✅ Сценарий сохранён!"
-Ссылка: t.me/{bot.get_me().username}?start={code}")
+   bot.send_message(message.chat.id, f"✅ Сценарий сохранён!\nСсылка: t.me/{bot.get_me().username}?start={code}")
 
 bot.polling()
