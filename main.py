@@ -1,6 +1,7 @@
 import telebot
 import os
 import json
+import re
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
@@ -43,7 +44,14 @@ def handle_start(message):
         if scenario:
             bot.send_message(user_id, scenario["text"])
             if scenario.get("file_or_link"):
-                bot.send_message(user_id, scenario["file_or_link"])
+                url = scenario["file_or_link"]
+                # Если это видео-ссылка (YouTube или mp4), показываем с предпросмотром
+                if re.search(r"(youtu\.be|youtube\.com|\.mp4|vimeo\.com)", url):
+                    preview = telebot.types.InlineKeyboardMarkup()
+                    preview.add(telebot.types.InlineKeyboardButton("▶️ Смотреть видео", url=url))
+                    bot.send_message(user_id, "🎥 Видео к сценарию:", reply_markup=preview)
+                else:
+                    bot.send_message(user_id, url)
         else:
             bot.send_message(user_id, "❌ Такой сценарий не найден.")
     else:
