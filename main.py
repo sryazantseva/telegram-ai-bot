@@ -11,7 +11,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 # Запускаем обработчики рассылок и сценариев
 init_broadcast(bot, ADMIN_ID)
-init_scenarios(bot, ADMIN_ID)
+init_scenarios(bot)
 
 # Проверка пинга
 @bot.message_handler(commands=["start"])
