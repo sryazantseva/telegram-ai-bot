@@ -5,13 +5,11 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 SCENARIO_FILE = "scenario_store.json"
 TEMP_SCENARIO_FILE = "temp_scenarios.json"
 
-
 def init_scenarios(bot, admin_id):
     @bot.message_handler(commands=["сценарий"])
     def handle_scenario(message):
         if message.from_user.id != admin_id:
             return
-
         bot.send_message(message.chat.id, "📝 Введите текст сценария:")
         bot.register_next_step_handler(message, get_scenario_text, bot)
 
@@ -41,7 +39,6 @@ def init_scenarios(bot, admin_id):
     def preview_scenario(message, bot, text, file_id):
         link = message.text if message.text.lower() != "нет" else ""
         scenario_id = str(uuid.uuid4())
-
         temp_data = load_temp()
         temp_data[scenario_id] = {
             "text": text,
@@ -49,18 +46,15 @@ def init_scenarios(bot, admin_id):
             "file_or_link": link
         }
         save_temp(temp_data)
-
         markup = InlineKeyboardMarkup()
         markup.add(
             InlineKeyboardButton("✅ Сохранить", callback_data=f"save_scenario|{scenario_id}"),
             InlineKeyboardButton("✏️ Изменить", callback_data=f"edit_scenario|{scenario_id}"),
             InlineKeyboardButton("❌ Удалить", callback_data=f"delete_scenario|{scenario_id}")
         )
-
         preview = f"📘 <b>Предпросмотр сценария:</b>\n\n{text}"
         if link:
             preview += f"\n\n🔗 <a href='{link}'>{link}</a>"
-
         bot.send_message(message.chat.id, preview, parse_mode="HTML", reply_markup=markup)
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("save_scenario"))
@@ -68,25 +62,19 @@ def init_scenarios(bot, admin_id):
         _, scenario_id = call.data.split("|", 1)
         temp_data = load_temp()
         data = temp_data.get(scenario_id)
-
         if not data:
             bot.send_message(call.message.chat.id, "❌ Ошибка: данные не найдены.")
             return
-
         msg = bot.send_message(call.message.chat.id, "💬 Введите короткий код сценария (латиницей):")
         bot.register_next_step_handler(msg, save_final, bot, data)
 
     def save_final(message, bot, data):
         code = message.text.strip()
-
         with open(SCENARIO_FILE, "r") as f:
             scenarios = json.load(f)
-
         scenarios[code] = data
-
         with open(SCENARIO_FILE, "w") as f:
             json.dump(scenarios, f)
-
         bot.send_message(message.chat.id, f"✅ Сценарий сохранён!\nСсылка: t.me/{bot.get_me().username}?start={code}")
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("edit_scenario"))
@@ -104,14 +92,12 @@ def init_scenarios(bot, admin_id):
         else:
             bot.send_message(call.message.chat.id, "❌ Черновик не найден.")
 
-
 def load_temp():
     try:
         with open(TEMP_SCENARIO_FILE, "r") as f:
             return json.load(f)
     except:
         return {}
-
 
 def save_temp(data):
     with open(TEMP_SCENARIO_FILE, "w") as f:
