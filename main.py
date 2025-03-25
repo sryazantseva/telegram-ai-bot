@@ -5,11 +5,10 @@ import uuid
 import threading
 import time
 from datetime import datetime, timedelta
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InputFile
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
-
 bot = telebot.TeleBot(BOT_TOKEN)
 
 SCENARIO_FILE = "scenario_store.json"
@@ -25,7 +24,7 @@ for file in [SCENARIO_FILE, USER_FILE, BROADCAST_FILE]:
 def save_user(user):
     with open(USER_FILE, "r") as f:
         users = json.load(f)
-    if not any(u["id"] == user.id for u in users):
+    if user.id not in [u["id"] for u in users]:
         users.append({
             "id": user.id,
             "first_name": getattr(user, "first_name", ""),
@@ -45,7 +44,7 @@ def handle_start(message):
             scenarios = json.load(f)
         scenario = scenarios.get(code)
         if scenario:
-            send_content(message.chat.id, scenario["text"], scenario.get("file_id"), scenario.get("file_or_link"))
+            send_content(message.chat.id, scenario["text"], scenario.get("file_id"), scenario.get("file_type"), scenario.get("file_or_link"))
         else:
             bot.send_message(message.chat.id, "❌ Такой сценарий не найден.")
     else:
@@ -55,102 +54,116 @@ def handle_start(message):
 def handle_ping(message):
     bot.send_message(message.chat.id, "✅ Бот работает!")
 
-def send_content(chat_id, text, file_id=None, link=None):
-    text_with_link = text
-    if link:
-        text_with_link += f"\n\n🔗 {link}"
-    if file_id:
-        bot.send_document(chat_id, file_id, caption=text_with_link)
+def send_content(chat_id, text, file_id=None, file_type=None, link=None):
+    caption = text + (f"\n\n🔗 {link}" if link else "")
+    if file_id and file_type:
+        if file_type == "document":
+            bot.send_document(chat_id, file_id, caption=caption)
+        elif file_type == "audio":
+            bot.send_audio(chat_id, file_id, caption=caption)
+        elif file_type == "video":
+            bot.send_video(chat_id, file_id, caption=caption)
+        elif file_type == "photo":
+            bot.send_photo(chat_id, file_id, caption=caption)
     else:
-        bot.send_message(chat_id, text_with_link)
+        bot.send_message(chat_id, caption)
 
-# === Сценарии ===
+# ==== Сценарий ====
 @bot.message_handler(commands=["сценарий"])
-def handle_scenario(message):
+def scenario_command(message):
     if message.from_user.id != ADMIN_ID:
         return
     bot.send_message(message.chat.id, "📝 Введите текст сценария:")
-    bot.register_next_step_handler(message, get_scenario_text)
+    bot.register_next_step_handler(message, scenario_text)
 
-def get_scenario_text(message):
+def scenario_text(message):
     text = message.text
     bot.send_message(message.chat.id, "📎 Прикрепите файл (или напишите 'нет'):")
-    bot.register_next_step_handler(message, get_scenario_file, text)
+    bot.register_next_step_handler(message, scenario_file, text)
 
-def get_scenario_file(message, text):
-    file_id = None
-    if message.text.lower() != "нет" and message.document:
-        file_id = message.document.file_id
-    elif message.text.lower() != "нет":
-        bot.send_message(message.chat.id, "❌ Неверный тип файла. Попробуйте снова.")
+def scenario_file(message, text):
+    file_id, file_type = None, None
+    if message.content_type == "document":
+        file_id, file_type = message.document.file_id, "document"
+    elif message.content_type == "audio":
+        file_id, file_type = message.audio.file_id, "audio"
+    elif message.content_type == "video":
+        file_id, file_type = message.video.file_id, "video"
+    elif message.content_type == "photo":
+        file_id, file_type = message.photo[-1].file_id, "photo"
+    elif message.text.lower() == "нет":
+        pass
+    else:
+        bot.send_message(message.chat.id, "❌ Неверный тип файла.")
         return
     bot.send_message(message.chat.id, "🔗 Вставьте ссылку (или 'нет'):")
-    bot.register_next_step_handler(message, preview_scenario, text, file_id)
+    bot.register_next_step_handler(message, preview_scenario, text, file_id, file_type)
 
-def preview_scenario(message, text, file_id):
+def preview_scenario(message, text, file_id, file_type):
     link = message.text if message.text.lower() != "нет" else ""
-    preview = f"📘 Предпросмотр сценария:\n\n{text}"
-    if link:
-        preview += f"\n\n🔗 {link}"
+    preview_text = f"📘 Предпросмотр сценария:\n\n{text}"
     markup = InlineKeyboardMarkup()
-    scenario_id = str(uuid.uuid4())
-    markup.add(
-        InlineKeyboardButton("✅ Сохранить", callback_data=f"save_scenario|{scenario_id}|{file_id or 'no'}|{link or 'no'}|{text}"),
-        InlineKeyboardButton("❌ Отмена", callback_data="cancel")
-    )
-    send_content(message.chat.id, preview, file_id, link)
-    bot.send_message(message.chat.id, "Сохранить сценарий?", reply_markup=markup)
+    markup.add(InlineKeyboardButton("✅ Сохранить", callback_data=f"save_scenario|{uuid.uuid4()}|{file_id or 'no'}|{file_type or 'no'}|{link or 'no'}|{text}"))
+    send_content(message.chat.id, preview_text, file_id, file_type, link)
+    bot.send_message(message.chat.id, "Сохранить этот сценарий?", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("save_scenario"))
-def handle_save_scenario(call):
-    _, scenario_id, file_id, link, text = call.data.split("|", 4)
-    bot.send_message(call.message.chat.id, "💬 Введите короткий код сценария:")
-    bot.register_next_step_handler(call.message, save_scenario_final, text, file_id if file_id != 'no' else None, link if link != 'no' else "")
+def save_scenario_handler(call):
+    _, uid, file_id, file_type, link, text = call.data.split("|", 5)
+    bot.send_message(call.message.chat.id, "💬 Введите короткий код сценария (латиницей):")
+    bot.register_next_step_handler(call.message, save_scenario_final, text, file_id if file_id != 'no' else None, file_type if file_type != 'no' else None, link if link != 'no' else "")
 
-def save_scenario_final(message, text, file_id, link):
+def save_scenario_final(message, text, file_id, file_type, link):
     code = message.text.strip()
     with open(SCENARIO_FILE, "r") as f:
         scenarios = json.load(f)
     scenarios[code] = {
         "text": text,
         "file_id": file_id,
-        "file_type": "document" if file_id else "",
+        "file_type": file_type,
         "file_or_link": link
     }
     with open(SCENARIO_FILE, "w") as f:
         json.dump(scenarios, f)
     bot.send_message(message.chat.id, f"✅ Сценарий сохранён!\nСсылка: t.me/{bot.get_me().username}?start={code}")
 
-# === Рассылка ===
+# ==== Рассылка ====
 @bot.message_handler(commands=["рассылка"])
-def handle_broadcast(message):
+def broadcast_command(message):
     if message.from_user.id != ADMIN_ID:
         return
     bot.send_message(message.chat.id, "📣 Введите текст рассылки:")
-    bot.register_next_step_handler(message, get_broadcast_text)
+    bot.register_next_step_handler(message, broadcast_text)
 
-def get_broadcast_text(message):
+def broadcast_text(message):
     text = message.text
     bot.send_message(message.chat.id, "📎 Прикрепите файл (или 'нет'):")
-    bot.register_next_step_handler(message, get_broadcast_file, text)
+    bot.register_next_step_handler(message, broadcast_file, text)
 
-def get_broadcast_file(message, text):
-    file_id = None
-    if message.text.lower() != 'нет' and message.document:
-        file_id = message.document.file_id
-    elif message.text.lower() != 'нет':
+def broadcast_file(message, text):
+    file_id, file_type = None, None
+    if message.content_type == "document":
+        file_id, file_type = message.document.file_id, "document"
+    elif message.content_type == "audio":
+        file_id, file_type = message.audio.file_id, "audio"
+    elif message.content_type == "video":
+        file_id, file_type = message.video.file_id, "video"
+    elif message.content_type == "photo":
+        file_id, file_type = message.photo[-1].file_id, "photo"
+    elif message.text.lower() == "нет":
+        pass
+    else:
         bot.send_message(message.chat.id, "❌ Неверный тип файла.")
         return
     bot.send_message(message.chat.id, "🔗 Вставьте ссылку (или 'нет'):")
-    bot.register_next_step_handler(message, preview_broadcast, text, file_id)
+    bot.register_next_step_handler(message, preview_broadcast, text, file_id, file_type)
 
-def preview_broadcast(message, text, file_id):
+def preview_broadcast(message, text, file_id, file_type):
     link = message.text if message.text.lower() != "нет" else ""
     broadcast_id = str(uuid.uuid4())
-
     with open(BROADCAST_FILE, "r") as f:
         broadcasts = json.load(f)
-    broadcasts[broadcast_id] = {"text": text, "file_id": file_id, "link": link}
+    broadcasts[broadcast_id] = {"text": text, "file_id": file_id, "file_type": file_type, "link": link}
     with open(BROADCAST_FILE, "w") as f:
         json.dump(broadcasts, f)
 
@@ -159,49 +172,52 @@ def preview_broadcast(message, text, file_id):
         InlineKeyboardButton("✅ Отправить сейчас", callback_data=f"send_now|{broadcast_id}"),
         InlineKeyboardButton("⏰ Запланировать на завтра", callback_data=f"send_later|{broadcast_id}")
     )
-    send_content(message.chat.id, f"📢 Предпросмотр рассылки:\n\n{text}", file_id, link)
+    send_content(message.chat.id, f"📢 Предпросмотр рассылки:\n\n{text}", file_id, file_type, link)
     bot.send_message(message.chat.id, "Выберите действие:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("send_"))
-def handle_send(call):
+def handle_send_broadcast(call):
     action, broadcast_id = call.data.split("|", 1)
     with open(BROADCAST_FILE, "r") as f:
         broadcasts = json.load(f)
     data = broadcasts.get(broadcast_id)
     if not data:
-        bot.send_message(call.message.chat.id, "❌ Ошибка: рассылка не найдена.")
+        bot.send_message(call.message.chat.id, "❌ Рассылка не найдена.")
         return
-
-    if action == "send_later":
+    if action == "send_now":
+        do_broadcast(data["text"], data.get("file_id"), data.get("file_type"), data.get("link"))
+    else:
         send_time = datetime.now() + timedelta(days=1)
         send_time = send_time.replace(hour=12, minute=0, second=0)
-        schedule_broadcast(data["text"], data.get("file_id"), data.get("link"), send_time)
-        bot.send_message(call.message.chat.id, "🕓 Запланировано на завтра в 12:00 МСК")
-    else:
-        do_broadcast(data["text"], data.get("file_id"), data.get("link"), call.message)
+        schedule_broadcast(data["text"], data.get("file_id"), data.get("file_type"), data.get("link"), send_time)
+        bot.send_message(call.message.chat.id, "🕓 Запланировано на завтра 12:00 МСК")
 
-def schedule_broadcast(text, file_id, link, when):
+def schedule_broadcast(text, file_id, file_type, link, when):
     def task():
-        time.sleep(max(0, (when - datetime.now()).total_seconds()))
-        do_broadcast(text, file_id, link)
+        delay = (when - datetime.now()).total_seconds()
+        time.sleep(max(0, delay))
+        do_broadcast(text, file_id, file_type, link)
     threading.Thread(target=task).start()
 
-def do_broadcast(text, file_id, link, notify_message=None):
+def do_broadcast(text, file_id, file_type, link):
     with open(USER_FILE, "r") as f:
         users = json.load(f)
-    count = 0
+    sent = 0
     for user in users:
         try:
-            send_content(user["id"], text, file_id, link)
-            count += 1
+            send_content(user["id"], text, file_id, file_type, link)
+            sent += 1
         except Exception as e:
-            print(f"❌ Не отправлено {user['id']}: {e}")
-    if notify_message:
-        bot.send_message(notify_message.chat.id, f"✅ Рассылка завершена. Отправлено: {count}")
-    print(f"✅ Рассылка завершена. Всего отправлено: {count}")
+            print(f"Ошибка: {user['id']}", e)
+    print(f"✅ Рассылка завершена. Отправлено: {sent}")
 
-@bot.callback_query_handler(func=lambda call: call.data == "cancel")
-def cancel_action(call):
-    bot.send_message(call.message.chat.id, "❌ Действие отменено.")
+# ==== Экспорт данных ====
+@bot.message_handler(commands=["экспорт"])
+def export_data(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    files = [SCENARIO_FILE, BROADCAST_FILE, USER_FILE]
+    for fpath in files:
+        bot.send_document(message.chat.id, InputFile(fpath))
 
 bot.polling()
