@@ -9,9 +9,12 @@ ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # OpenAI client via ProxyAPI
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+api_key = os.environ.get("OPENAI_API_KEY")
+if not api_key:
+    raise ValueError("❌ Переменная окружения OPENAI_API_KEY не установлена!")
+
 client = OpenAI(
-    api_key=OPENAI_API_KEY,
+    api_key=api_key,
     base_url="https://api.proxyapi.ru/openai/v1"
 )
 
@@ -50,14 +53,14 @@ def handle_start(message):
             if scenario.get("file_or_link"):
                 bot.send_message(user_id, scenario["file_or_link"])
             if scenario.get("file_id"):
-                ft = scenario.get("file_type")
-                if ft == "document":
+                file_type = scenario.get("file_type")
+                if file_type == "document":
                     bot.send_document(user_id, scenario["file_id"])
-                elif ft == "audio":
+                elif file_type == "audio":
                     bot.send_audio(user_id, scenario["file_id"])
-                elif ft == "video":
+                elif file_type == "video":
                     bot.send_video(user_id, scenario["file_id"])
-                elif ft == "photo":
+                elif file_type == "photo":
                     bot.send_photo(user_id, scenario["file_id"])
         else:
             bot.send_message(user_id, "❌ Такой сценарий не найден.")
@@ -103,7 +106,6 @@ def process_file_step(message, text):
         ask_for_link(message, text, message.photo[-1].file_id, "photo")
     else:
         bot.send_message(message.chat.id, "❌ Неверный тип файла. Попробуй ещё раз.")
-
 
 def ask_for_link(message, text, file_id, file_type):
     msg = bot.send_message(message.chat.id, "🔗 Вставьте ссылку (или отправьте 'нет'):")
