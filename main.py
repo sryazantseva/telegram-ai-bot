@@ -5,6 +5,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMedia
 from datetime import datetime, timedelta
 import threading
 import time
+import uuid
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
@@ -70,28 +71,53 @@ def get_broadcast_file(message, text):
 
 def preview_broadcast(message, text, file_id):
     link = message.text if message.text.lower() != 'нет' else ""
+
+    broadcast_id = str(uuid.uuid4())
+    with open(BROADCAST_FILE, "r") as f:
+        broadcasts = json.load(f)
+
+    broadcasts[broadcast_id] = {
+        "text": text,
+        "file_id": file_id,
+        "link": link
+    }
+    with open(BROADCAST_FILE, "w") as f:
+        json.dump(broadcasts, f)
+
     preview = f"<b>📢 Предпросмотр рассылки:</b>\n\n{text}"
     if link:
         preview += f"\n\n🔗 <a href='{link}'>Ссылка</a>"
 
     markup = InlineKeyboardMarkup()
     markup.add(
-        InlineKeyboardButton("✅ Отправить сейчас", callback_data=f"send_now|{text}|{file_id or 'no'}|{link}"),
-        InlineKeyboardButton("⏰ Запланировать на завтра", callback_data=f"send_later|{text}|{file_id or 'no'}|{link}")
+        InlineKeyboardButton("✅ Отправить сейчас", callback_data=f"send_now|{broadcast_id}"),
+        InlineKeyboardButton("⏰ Запланировать на завтра", callback_data=f"send_later|{broadcast_id}")
     )
     bot.send_message(message.chat.id, preview, parse_mode='HTML', reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("send_"))
 def handle_send(call):
-    action, text, file_id, link = call.data.split("|", 3)
+    action, broadcast_id = call.data.split("|", 1)
+
+    with open(BROADCAST_FILE, "r") as f:
+        broadcasts = json.load(f)
+    broadcast = broadcasts.get(broadcast_id)
+    if not broadcast:
+        bot.send_message(call.message.chat.id, "❌ Не удалось найти рассылку.")
+        return
+
+    text = broadcast["text"]
+    file_id = broadcast["file_id"]
+    link = broadcast["link"]
+
     send_time = datetime.now()
     if action == "send_later":
         send_time = send_time + timedelta(days=1)
         send_time = send_time.replace(hour=12, minute=0, second=0)
-        schedule_broadcast(text, file_id if file_id != 'no' else None, link, send_time)
+        schedule_broadcast(text, file_id, link, send_time)
         bot.send_message(call.message.chat.id, "🕓 Запланировано на завтра 12:00 МСК")
     else:
-        do_broadcast(text, file_id if file_id != 'no' else None, link)
+        do_broadcast(text, file_id, link)
 
 def schedule_broadcast(text, file_id, link, when):
     def task():
