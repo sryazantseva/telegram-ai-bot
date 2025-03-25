@@ -1,3 +1,4 @@
-# Пока просто заготовка — подключим позже из main.py
 def init_scenarios(bot):
-    pass
+    @bot.message_handler(commands=["сценарий"])
+    def handle_scenario(message):
+        bot.send_message(message.chat.id, "Сценарии пока не настроены.")
