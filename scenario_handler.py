@@ -17,7 +17,6 @@ def init_scenarios(bot, admin_id):
         text = message.text
         scenario_id = str(uuid.uuid4())
 
-        # Сохраняем во временное хранилище
         temp_data = load_temp()
         temp_data[scenario_id] = {
             "text": text,
@@ -80,7 +79,6 @@ def init_scenarios(bot, admin_id):
         text = draft["text"]
         link = draft.get("file_or_link", "")
         markup = InlineKeyboardMarkup()
-        # Вертикальное расположение кнопок
         markup.add(InlineKeyboardButton("✏️ Изменить текст", callback_data=f"scenario_edit_text|{scenario_id}"))
         markup.add(InlineKeyboardButton("✏️ Изменить файл", callback_data=f"scenario_edit_file|{scenario_id}"))
         markup.add(InlineKeyboardButton("✏️ Изменить ссылку", callback_data=f"scenario_edit_link|{scenario_id}"))
@@ -188,7 +186,6 @@ def init_scenarios(bot, admin_id):
         with open(SCENARIO_FILE, "w", encoding="utf-8") as f:
             json.dump(scenarios, f, ensure_ascii=False)
 
-        # Удаляем из temp
         temp_data = load_temp()
         if scenario_id in temp_data:
             del temp_data[scenario_id]
