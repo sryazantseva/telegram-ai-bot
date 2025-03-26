@@ -136,4 +136,7 @@ def send_content(chat_id, text, file_id=None, link=None):
 init_broadcast(bot, ADMIN_ID, scheduler)
 init_scenarios(bot, ADMIN_ID)
 
+print("BOT_TOKEN =", BOT_TOKEN)
+print("ADMIN_ID =", ADMIN_ID)
+
 bot.polling()
