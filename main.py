@@ -139,6 +139,9 @@ init_scenarios(bot, ADMIN_ID)
 print("BOT_TOKEN =", BOT_TOKEN)
 print("ADMIN_ID =", ADMIN_ID)
 
-bot.remove_webhook()
+# ... остальные импорты и настройки
+print("Удаляем webhook...")
+bot.remove_webhook()  # это удаляет любой ранее установленный webhook
 print("Webhook удалён, начинаем polling...")
 bot.polling()
+
