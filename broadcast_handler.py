@@ -4,13 +4,11 @@ from datetime import datetime, timedelta
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import pytz
 
-# Файлы
-BROADCAST_FILE = "broadcasts.json"            # Сохранённые рассылки
-TEMP_BROADCAST_FILE = "temp_broadcasts.json"  # Черновики рассылок
-SCHEDULED_BROADCAST_FILE = "scheduled_broadcasts.json"  # Запланированные рассылки
+BROADCAST_FILE = "broadcasts.json"
+TEMP_BROADCAST_FILE = "temp_broadcasts.json"
+SCHEDULED_BROADCAST_FILE = "scheduled_broadcasts.json"
 USER_FILE = "user_db.json"
 
-# Часовой пояс МСК
 MSK_TZ = pytz.timezone("Europe/Moscow")
 
 def load_temp_broadcast():
@@ -102,7 +100,6 @@ def init_broadcast(bot, admin_id, scheduler):
             file_id = message.photo[-1].file_id
             media_type = "photo"
         else:
-            # Пользователь отправил не документ и не текст 'нет'/'не'
             bot.send_message(message.chat.id, "❌ Неверный тип файла. Прикрепите файл или введите 'нет'/'не'.")
             return
 
@@ -280,9 +277,6 @@ def init_broadcast(bot, admin_id, scheduler):
         markup.add(InlineKeyboardButton("🕰 Указать время на завтра (МСК)", callback_data=f"broadcast_schedule|{broadcast_id}"))
         bot.send_message(call.message.chat.id, "✅ Черновик сохранён. Выберите действие:", reply_markup=markup)
 
-    # --------------------------------------
-    # 3. Отправка сразу или по расписанию
-    # --------------------------------------
     @bot.callback_query_handler(func=lambda call: call.data.startswith("broadcast_send_now"))
     def broadcast_send_now(call):
         _, broadcast_id = call.data.split("|", 1)
@@ -330,7 +324,7 @@ def init_broadcast(bot, admin_id, scheduler):
         scheduled.append({
             "job_id": job.id,
             "broadcast_id": broadcast_id,
-            "run_date": str(run_date),  # в строковом формате
+            "run_date": str(run_date),
             "status": "scheduled"
         })
         save_scheduled(scheduled)
@@ -338,9 +332,9 @@ def init_broadcast(bot, admin_id, scheduler):
         bot.send_message(message.chat.id, f"📅 Рассылка запланирована на {run_date.strftime('%d.%m %H:%M')} (МСК).")
 
     # --------------------------------------
-    # 4. Список запланированных рассылок
+    # 4. Список запланированных рассылок (команда /запланированные)
     # --------------------------------------
-    @bot.message_handler(commands=["scheduled_broadcasts"])
+    @bot.message_handler(commands=["запланированные"])
     def list_scheduled_broadcasts(message):
         if message.from_user.id != admin_id:
             return
@@ -363,13 +357,11 @@ def init_broadcast(bot, admin_id, scheduler):
     @bot.callback_query_handler(func=lambda call: call.data.startswith("scheduled_delete"))
     def scheduled_delete(call):
         _, bc_id, job_id = call.data.split("|", 2)
-        # Удаляем из APScheduler
         try:
             scheduler.remove_job(job_id)
         except:
             pass
 
-        # Удаляем из JSON
         scheduled = load_scheduled()
         for item in scheduled:
             if item["job_id"] == job_id:
@@ -380,28 +372,18 @@ def init_broadcast(bot, admin_id, scheduler):
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("scheduled_edit"))
     def scheduled_edit(call):
-        """
-        Логика редактирования запланированной рассылки:
-        1. Останавливаем текущую задачу (remove_job).
-        2. Переводим её снова в режим черновика (temp_broadcasts.json),
-           чтобы админ мог внести изменения (текст, файл, ссылку).
-        3. После сохранения черновика — снова указываем время.
-        """
         _, bc_id, job_id = call.data.split("|", 2)
-        # Останавливаем задачу
         try:
             scheduler.remove_job(job_id)
         except:
             pass
 
-        # Обновляем статус в scheduled_broadcasts.json
         scheduled = load_scheduled()
         for item in scheduled:
             if item["job_id"] == job_id:
                 item["status"] = "editing"
         save_scheduled(scheduled)
 
-        # Загружаем финальную рассылку из broadcasts.json
         broadcasts = load_broadcasts()
         if bc_id not in broadcasts:
             bot.send_message(call.message.chat.id, "❌ Рассылка не найдена.")
@@ -415,11 +397,9 @@ def init_broadcast(bot, admin_id, scheduler):
         bot.send_message(call.message.chat.id, "🔁 Переводим рассылку в режим черновика. Теперь можете редактировать.")
         send_broadcast_preview(call.message.chat.id, bc_id, temp_data[bc_id])
 
-# --------------------------------------
-# 5. Функции отправки
-# --------------------------------------
+
 def do_scheduled_broadcast(bot, broadcast_id):
-    """ Функция, которую вызывает APScheduler в заданное время. """
+    """Функция, которую вызывает APScheduler в заданное время."""
     broadcasts = load_broadcasts()
     broadcast = broadcasts.get(broadcast_id)
     if not broadcast:
@@ -427,18 +407,14 @@ def do_scheduled_broadcast(bot, broadcast_id):
 
     count = do_broadcast(bot, broadcast)
 
-    # После отправки обновляем статус
     scheduled = load_scheduled()
     for item in scheduled:
         if item["broadcast_id"] == broadcast_id and item["status"] == "scheduled":
             item["status"] = "done"
     save_scheduled(scheduled)
 
-    # Уведомим админа (можно хранить admin_id в настройках)
-    # Здесь admin_id недоступен напрямую, поэтому отправить сообщение
-    # можно либо вынести admin_id в глобальную переменную, либо в БД
-    # Либо можно хранить admin_id в broadcasts.json. Для примера просто print.
     print(f"[SCHEDULED] Рассылка {broadcast_id} отправлена {count} пользователям.")
+
 
 def do_broadcast(bot, broadcast):
     """
