@@ -139,4 +139,5 @@ init_scenarios(bot, ADMIN_ID)
 print("BOT_TOKEN =", BOT_TOKEN)
 print("ADMIN_ID =", ADMIN_ID)
 
+bot.remove_webhook()
 bot.polling()
