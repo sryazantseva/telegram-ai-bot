@@ -140,4 +140,5 @@ print("BOT_TOKEN =", BOT_TOKEN)
 print("ADMIN_ID =", ADMIN_ID)
 
 bot.remove_webhook()
+print("Webhook удалён, начинаем polling...")
 bot.polling()
